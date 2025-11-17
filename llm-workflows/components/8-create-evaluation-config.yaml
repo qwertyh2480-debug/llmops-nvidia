@@ -1,0 +1,72 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-create-eval-config-template
+spec:
+  templates:
+    - name: create-eval-config
+      inputs:
+        parameters:
+          - name: nemo_evaluator_endpoint
+          - name: namespace
+          - name: dataset_name
+      container:
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        args: 
+          - |
+            pip install huggingface_hub requests minio && \
+            cat <<EOF > script.py
+            import requests
+            if __name__ == "__main__":
+                url = "{{inputs.parameters.nemo_evaluator_endpoint}}/v1/evaluation/configs"
+                headers = { 'accept': 'application/json'}
+                
+                data = {
+                      "type": "similarity_metrics",
+                      "tasks": [
+                         {
+                            "type": "default",
+                            "dataset": {
+                               "files_url": "nds:{{inputs.parameters.namespace}}/{{inputs.parameters.dataset_name}}/testing/testing.jsonl"
+                            },
+                            "metrics": [
+                               {
+                                  "name": "accuracy"
+                               },
+                               {
+                                  "name": "bleu"
+                               },
+                               {
+                                  "name": "rouge"
+                               },
+                               {
+                                  "name": "em"
+                               },
+                               {
+                                  "name": "f1"
+                               }
+                            ],
+                            "params": {
+                               "tokens_to_generate": 200,
+                               "temperature": 0.7,
+                               "top_k": 20,
+                               "n_samples": -1
+                            }
+                         }
+                      ]
+                }
+                
+                response=requests.request("POST", url, headers=headers, json=data, verify=False)
+                response_eval_config = response.json()
+                eval_config_id = response_eval_config["id"]
+                f = open("/tmp/eval_config.txt", "w")
+                f.write(eval_config_id)
+                f.close()
+            EOF
+            python script.py
+      outputs:
+        parameters:
+        - name: eval_config
+          valueFrom:
+            path: /tmp/eval_config.txt 

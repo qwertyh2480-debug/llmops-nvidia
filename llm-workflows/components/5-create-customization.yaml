@@ -1,0 +1,84 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-customization-template
+spec:
+  templates:
+    - name: nemo-customization
+      inputs:
+        parameters:
+          - name: nemo_customizer_endpoint
+          - name: dataset_name
+          - name: namespace
+          - name: project_name
+          - name: new_model_name
+      container:
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        args: 
+          - |
+            pip install huggingface_hub requests minio && \
+            cat <<EOF > script.py
+            import requests
+            import os
+
+            def create_customization_job():
+                url = f"{{inputs.parameters.nemo_customizer_endpoint}}/v1/customization/jobs"
+                headers = { 'accept': 'application/json'}
+                data = {
+                    "config": "meta/llama-3.1-8b-instruct",
+                        "dataset": {
+                           "name": "{{inputs.parameters.dataset_name}}",
+                           "namespace": "{{inputs.parameters.namespace}}"
+                        },
+                        "hyperparameters": {
+                           "training_type": "sft",
+                           "finetuning_type": "lora",
+                           "epochs": 1,
+                           "batch_size": 32,
+                           "learning_rate": 0.0001,
+                           "lora": {"adapter_dim": 16}
+                        },
+                        "project": "{{inputs.parameters.project_name}}",
+                        "model": {
+                            "enabled": "true", 
+                            "finetuning_types": ["lora"], 
+                            "max_seq_length": 4096, 
+                            "micro_batch_size": 1, 
+                            "model_path": "/mount/models/llama-3_1-8b-instruct", 
+                            "name": "meta/llama-3.1-8b-instruct", 
+                            "num_gpus": 1, 
+                            "num_nodes": 1, 
+                            "num_parameters": 8000000000, 
+                            "precision": "bf16", 
+                            "tensor_parallel_size": 1
+                        },
+                        "ownership": {
+                           "created_by": "me",
+                           "access_policies": {
+                              "arbitrary": "json"
+                           }
+                        },
+                        "output_model": "{{inputs.parameters.new_model_name}}"
+                }
+                response=requests.request("POST", url, headers=headers, json=data, verify=False)
+                response_customization = response.json()
+                return response_customization
+
+            if __name__ == "__main__":
+                response_customization = create_customization_job()
+                print(response_customization)
+                customization_id = response_customization["id"]
+                os.makedirs(os.path.dirname("/tmp"), exist_ok=True)
+                f = open("/tmp/customization_id.txt", "w")
+                f.write(customization_id)
+                f.close()
+            EOF
+            python script.py
+      outputs:
+        parameters:
+        - name: customization_id 
+          valueFrom:
+            path: /tmp/customization_id.txt 

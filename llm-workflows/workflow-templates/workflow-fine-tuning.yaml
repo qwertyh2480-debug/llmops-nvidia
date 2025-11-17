@@ -1,0 +1,164 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: workflow-fine-tuning
+spec:
+  entrypoint: nemo-create-dataset
+  arguments:                    # You can pass in arguments as normal
+    parameters:
+      - name: nemo_datastore_endpoint
+        value: "http://nemo-datastore.nemo-datastore.svc.cluster.local:3000"
+      - name: nemo_customizer_endpoint
+        value: "http://nemo-customizer-api.nemo-customizer.svc.cluster.local:8000"
+      - name: nemo_evaluator_endpoint
+        value: "http://nemo-evaluator.nemo-evaluator.svc.cluster.local:7331"
+      - name: nemo_entity_store_endpoint
+        value: "http://nemo-entity-store.nemo-entity-store.svc.cluster.local:8000"
+      - name: nim_internal_endpoint
+        value: "http://meta-llama3-1-8b-instruct.llama3-1-8b-instruct.svc.cluster.local:8000"
+      - name: dataset_name_prefix
+        value: "test"
+      - name: namespace
+        value: "default"
+      - name: new_model_name
+        value: "example-model@v3"
+      - name: project_name
+        value: "example-project-workflow"
+      - name: minio_url
+        value: "minio-client.minio.svc.cluster.local:9000"
+      - name: minio_username
+        value: "admin"
+      - name: minio_password
+        value: "QuX2+P16SPc7"
+      - name: minio_bucket_name
+        value: "test-dataset"
+  templates:
+    - name: nemo-create-dataset
+      steps:                              
+        - - name: create-dataset
+            templateRef:                  
+              name: nemo-create-dataset-template
+              template: create-dataset
+              clusterScope: true
+            arguments:                    
+              parameters:
+              - name: nemo_datastore_endpoint
+                value: "{{workflow.parameters.nemo_datastore_endpoint}}"
+              - name: dataset_name
+                value: "{{workflow.parameters.dataset_name_prefix}}-{{workflow.name}}"
+              - name: namespace
+                value: "{{workflow.parameters.namespace}}"
+
+        - - name: print-repo-id
+            templateRef:                  
+              name: nemo-print-repo-id-template
+              template: print-repo-id
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: repo_id
+                value: "{{steps.create-dataset.outputs.parameters.repo_id}}"
+        - - name: upload-dataset-files-to-nemo-datastore
+            templateRef:                  
+              name: nemo-upload-files-to-nemo-datastore-template
+              template: upload-files-to-nemo-datastore
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: nemo_datastore_endpoint
+                value: "{{workflow.parameters.nemo_datastore_endpoint}}"
+              - name: repo_id
+                value: "{{steps.create-dataset.outputs.parameters.repo_id}}"
+              - name: minio_url
+                value: "{{workflow.parameters.minio_url}}"
+              - name: minio_username
+                value: "{{workflow.parameters.minio_username}}"
+              - name: minio_password
+                value: "{{workflow.parameters.minio_password}}"
+              - name: minio_bucket_name
+                value: "{{workflow.parameters.minio_bucket_name}}"
+          
+        - - name: register-dataset-nemo-entity-store
+            templateRef:                  
+              name: nemo-register-dataset-template
+              template: register-dataset
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: nemo_entity_store_endpoint
+                value: "{{workflow.parameters.nemo_entity_store_endpoint}}"
+              - name: dataset_name
+                value: "{{workflow.parameters.dataset_name_prefix}}-{{workflow.name}}"
+              - name: namespace
+                value: "{{workflow.parameters.namespace}}"
+              - name: project_name
+                value: "{{workflow.parameters.project_name}}"
+
+        - - name: nemo-customization
+            templateRef:                  
+              name: nemo-customization-template
+              template: nemo-customization
+              clusterScope: true
+            arguments:
+              parameters:    
+              - name: nemo_customizer_endpoint
+                value: "{{workflow.parameters.nemo_customizer_endpoint}}"
+              - name: dataset_name
+                value: "{{workflow.parameters.dataset_name_prefix}}-{{workflow.name}}"
+              - name: namespace
+                value: "{{workflow.parameters.namespace}}"
+              - name: project_name
+                value: "{{workflow.parameters.project_name}}"
+              - name: new_model_name
+                value: "{{workflow.parameters.new_model_name}}"
+        - - name: track-customization-id-status
+            templateRef:                  
+              name: nemo-track-customization-id-status-template
+              template: track-customization-id-status
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: nemo_customizer_endpoint
+                value: "{{workflow.parameters.nemo_customizer_endpoint}}"
+              - name: customization_id
+                value: "{{steps.nemo-customization.outputs.parameters.customization_id}}"
+        - - name: create-eval-target
+            templateRef:                  
+              name: nemo-create-eval-target-template
+              template: create-eval-target
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: nemo_evaluator_endpoint
+                value: "{{workflow.parameters.nemo_evaluator_endpoint}}"
+              - name: new_model_name
+                value: "{{workflow.parameters.new_model_name}}"
+              - name: nim_internal_endpoint
+                value: "{{workflow.parameters.nim_internal_endpoint}}"
+          - name: create-eval-config
+            templateRef:                  
+              name: nemo-create-eval-config-template
+              template: create-eval-config
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: nemo_evaluator_endpoint
+                value: "{{workflow.parameters.nemo_evaluator_endpoint}}"
+              - name: namespace
+                value: "{{workflow.parameters.namespace}}"
+              - name: dataset_name
+                value: "{{workflow.parameters.dataset_name_prefix}}-{{workflow.name}}"           
+        - - name: create-evaluation
+            templateRef:                  
+              name: nemo-create-evaluation-template
+              template: create-evaluation
+              clusterScope: true
+            arguments:
+              parameters:
+              - name: nemo_evaluator_endpoint
+                value: "{{workflow.parameters.nemo_evaluator_endpoint}}"
+              - name: eval_target
+                value: "{{steps.create-eval-target.outputs.parameters.eval_target}}"
+              - name: eval_config
+                value: "{{steps.create-eval-config.outputs.parameters.eval_config}}"
+

@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-print-repo-id-template
+spec:
+  templates:
+    - name: print-repo-id
+      inputs:
+        parameters:
+          - name: repo_id
+      container:
+        image: ubuntu:24.10
+        command: [echo]
+        args: ["{{inputs.parameters.repo_id}}"]

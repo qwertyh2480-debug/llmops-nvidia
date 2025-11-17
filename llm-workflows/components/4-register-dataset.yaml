@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-register-dataset-template
+spec:
+  templates:
+    - name: register-dataset
+      inputs:
+        parameters:
+          - name: nemo_entity_store_endpoint
+          - name: dataset_name
+          - name: namespace
+          - name: project_name
+      container:
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        args: 
+          - |
+            pip install huggingface_hub requests minio && \
+            cat <<EOF > script.py
+            import requests
+            if __name__ == "__main__":
+                url = "{{inputs.parameters.nemo_entity_store_endpoint}}/v1/datasets"
+                headers = { 'accept': 'application/json'}
+                
+                data = {
+                      "name": "{{inputs.parameters.dataset_name}}",
+                      "namespace": "{{inputs.parameters.namespace}}",
+                      "description": "This is an example of dataset",
+                      "files_url": "hf://datasets/{{inputs.parameters.namespace}}/{{inputs.parameters.dataset_name}}",
+                      "project": "{{inputs.parameters.project_name}}"
+                }
+                
+                response=requests.request("POST", url, headers=headers, json=data, verify=False)
+                response_entity = response.json()
+                print(response_entity)
+            EOF
+            python script.py

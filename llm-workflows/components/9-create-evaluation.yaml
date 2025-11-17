@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-create-evaluation-template
+spec:
+  templates:
+    - name: create-evaluation
+      inputs:
+        parameters:
+          - name: nemo_evaluator_endpoint
+          - name: eval_target
+          - name: eval_config
+      container:
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        args: 
+          - |
+            pip install huggingface_hub requests minio && \
+            cat <<EOF > script.py
+            import requests
+            if __name__ == "__main__":
+                url = "{{inputs.parameters.nemo_evaluator_endpoint}}/v1/evaluation/jobs"
+                print(url)
+                headers = { 'accept': 'application/json'}
+                
+                data = {
+                      "target_id": "{{inputs.parameters.eval_target}}",
+                      "config_id": "{{inputs.parameters.eval_config}}"
+                }
+                response=requests.request("POST", url, headers=headers, json=data, verify=False)
+                response_eval = response.json()
+                print(response_eval)
+                eval_id = response_eval["id"]
+                f = open("/tmp/eval_id.txt", "w")
+                f.write(eval_id)
+                f.close()
+            EOF
+            python script.py
+      outputs:
+        parameters:
+        - name: eval_id 
+          valueFrom:
+            path: /tmp/eval_id.txt 

@@ -1,0 +1,113 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-upload-files-to-nemo-datastore-template
+spec:
+  templates:
+    - name: upload-files-to-nemo-datastore
+      inputs:
+        parameters:
+          - name: nemo_datastore_endpoint
+          - name: repo_id
+          - name: minio_url
+          - name: minio_username
+          - name: minio_password
+          - name: minio_bucket_name
+      container:
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        args: 
+          - |
+            pip install huggingface_hub requests minio && \
+            cat <<EOF > script.py
+            import requests
+            from huggingface_hub import HfApi
+            from huggingface_hub import set_client_factory
+            import os
+            from minio import Minio
+            from minio.error import S3Error
+            import subprocess
+            import sys
+            def custom_httpx_client_factory() -> httpx.Client:
+              return httpx.Client(verify=False)
+            
+            def download_dataset():
+                # MinIO Configuration
+                minio_url = "{{inputs.parameters.minio_url}}"
+                access_key = "{{inputs.parameters.minio_username}}"
+                secret_key = "{{inputs.parameters.minio_password}}"
+                bucket_name = "{{inputs.parameters.minio_bucket_name}}"
+                local_download_path = "/tmp"  # Local base directory for downloads
+                
+                # Initialize MinIO Client
+                client = Minio(
+                    minio_url,
+                    access_key=access_key,
+                    secret_key=secret_key,
+                    secure=False,  # Set to True if using HTTPS
+                )
+                
+                # Ensure the local download directory exists
+                os.makedirs(local_download_path, exist_ok=True)
+                
+                # List and Download all objects
+                objects = client.list_objects(bucket_name, recursive=True)
+            
+                for obj in objects:
+                    object_name = obj.object_name  # Full path in MinIO
+                    local_file_path = os.path.join(local_download_path, object_name)
+            
+                    # Create directories if they don’t exist
+                    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+            
+                    # Download the file
+                    client.fget_object(bucket_name, object_name, local_file_path)
+                    print(f"Downloaded: {object_name} -> {local_file_path}")
+                
+    
+            def backend_factory():
+                session = requests.Session()
+                session.verify = False
+                return session
+
+            def upload_datasets(repo_id, repo_type):
+                hf_endpoint = "{{inputs.parameters.nemo_datastore_endpoint}}/v1/hf"
+                hf_api = HfApi(endpoint=hf_endpoint, token="token")
+                subprocess.run(["find", "/tmp"])
+
+                training_data_folder = "/tmp/training"  # Path to the folder
+                testing_data_folder = "/tmp/testing"  # Path to the folder
+                validation_data_folder = "/tmp/validation"  # Path to the folder
+
+                # Upload the folder
+                hf_api.upload_folder(
+                    folder_path=training_data_folder,
+                    repo_id=repo_id,
+                    repo_type=repo_type,
+                    path_in_repo="training"
+                )
+
+                hf_api.upload_folder(
+                    folder_path=testing_data_folder,
+                    repo_id=repo_id,
+                    repo_type=repo_type,
+                    path_in_repo="testing"
+                )
+
+                commit_info = hf_api.upload_folder(
+                    folder_path=validation_data_folder,
+                    repo_id=repo_id,
+                    repo_type=repo_type,
+                    path_in_repo="validation"
+                )
+                print(commit_info)
+
+            if __name__ == "__main__":
+                repo_id = "{{inputs.parameters.repo_id}}"
+                repo_type = "dataset"
+                print("Hello from Argo Workflow", flush=True)
+                set_client_factory(custom_httpx_client_factory)
+                download_dataset()
+                upload_datasets(repo_id, repo_type)
+            EOF
+            python script.py

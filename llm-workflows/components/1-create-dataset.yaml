@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-create-dataset-template
+spec:
+  templates:
+    - name: create-dataset
+      inputs:
+        parameters:
+          - name: nemo_datastore_endpoint
+          - name: dataset_name
+          - name: namespace
+      container:
+        image: python:3.9-slim
+        command: ["sh", "-c"]
+        args: 
+          - |
+            pip install huggingface_hub requests && \
+            cat <<EOF > script.py
+            import requests
+            import httpx
+            from huggingface_hub import HfApi
+            from huggingface_hub import set_client_factory
+            def backend_factory():
+                session = requests.Session()
+                session.verify = False
+                return session
+
+            def custom_httpx_client_factory() -> httpx.Client:
+              return httpx.Client(verify=False)
+        
+            def create_repo(repo_id, repo_type):
+                hf_endpoint = "{{inputs.parameters.nemo_datastore_endpoint}}/v1/hf"
+                api = HfApi(endpoint=hf_endpoint, token="token")
+
+            if __name__ == "__main__":
+                repo_id = "{{inputs.parameters.namespace}}/{{inputs.parameters.dataset_name}}"
+                repo_type = "dataset"
+                set_client_factory(custom_httpx_client_factory)
+                create_repo(repo_id, repo_type)
+                f = open("/tmp/repo_id.txt", "w")
+                f.write(repo_id)
+                f.close()
+
+            EOF
+            python script.py
+      outputs:
+        parameters:
+        - name: repo_id 
+          valueFrom:
+            path: /tmp/repo_id.txt 

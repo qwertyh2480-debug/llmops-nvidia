@@ -1,0 +1,47 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configmap-creator
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "apply", "list", "patch", "get"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "apply", "list", "patch", "get"]
+
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "watch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["workflowtaskresults"]
+  verbs: ["create", "apply", "list", "patch", "get"]
+- apiGroups: ["argoproj.io"]
+  resources: ["workflowtasksets", "workflowartifactgctasks"]
+  verbs: ["list", "watch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["workflowtasksets/status", "workflowartifactgctasks/status"]
+  verbs: ["patch"]
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: configmap-creator-binding
+subjects:
+- kind: ServiceAccount
+  name: default
+roleRef:
+  kind: Role
+  name: configmap-creator
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: default.service-account-token
+  annotations:
+    kubernetes.io/service-account.name: default
+type: kubernetes.io/service-account-token

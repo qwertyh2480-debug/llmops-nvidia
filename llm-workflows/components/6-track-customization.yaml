@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: nemo-track-customization-id-status-template
+spec:
+  templates:
+    - name: track-customization-id-status
+      inputs:
+        parameters:
+          - name: nemo_customizer_endpoint
+          - name: customization_id
+      container:
+        image: ubuntu:24.04
+        command: [/bin/bash, -c]
+        args: 
+          - |
+            apt-get update && apt-get install git curl jq -y;
+            URL="{{inputs.parameters.nemo_customizer_endpoint}}/v1/customization/jobs/{{inputs.parameters.customization_id}}/status";
+            while true; do
+              response=$(curl -k -s "$URL");
+              status=$(echo "$response" | jq -r '.status');
+              if [[ "$status" == "completed" ]]; then
+                echo "Status: TRAINING_COMPLETED";
+                echo "$response";
+                exit 0;
+              elif [[ "$status" == "failure" ]]; then
+                echo "Status: FAILURE";
+                exit 1;
+              else
+                echo "Status: $status, retrying...";
+                sleep 5;
+              fi;
+            done;
