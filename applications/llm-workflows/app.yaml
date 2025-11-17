@@ -1,0 +1,25 @@
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-workflows
+  namespace: argocd
+spec:
+  destination:
+    namespace: nemo-workflow-templates
+    server: 'https://kubernetes.default.svc'
+  source:
+    path: llm-workflows
+    repoURL: 'ssh://git@github.com/qwertyh2480-debug/llmops-nvidia.git'
+    targetRevision: main
+    directory:
+      recurse: true
+  project: default
+  syncPolicy:
+    syncOptions:
+    - Validate=false
+    - CreateNamespace=true
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
